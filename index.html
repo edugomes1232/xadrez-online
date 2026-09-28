@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Xadrez Online</title>
+<style>
+body{margin:0;background:#10131a;color:#fff;font:16px Arial;text-align:center}
+main{max-width:900px;margin:auto;padding:25px 15px}
+input,button{padding:13px;margin:5px;border-radius:9px;border:0;font-size:16px}
+input{background:#202632;color:#fff;border:1px solid #394354}
+button{background:#7058e8;color:#fff;font-weight:bold;cursor:pointer}
+button:hover{filter:brightness(1.12)}
+.hide{display:none}
+.code{font-size:32px;letter-spacing:6px;font-weight:bold;margin:20px}
+.err{color:#ff7583}
+.board{width:min(92vw,640px);aspect-ratio:1;margin:20px auto;display:grid;grid-template-columns:repeat(8,1fr);border:5px solid #222}
+.s{display:flex;align-items:center;justify-content:center;font-size:clamp(30px,8vw,65px);cursor:pointer;position:relative;user-select:none}
+.l{background:#f0d9b5}.d{background:#b58863}
+.sel{outline:5px solid #7058e8;outline-offset:-5px}
+.legal:after{content:"";position:absolute;width:20%;height:20%;background:#0005;border-radius:50%}
+#status{font-weight:bold;font-size:18px}
+</style>
+</head>
+<body>
+<main>
+<section id="home">
+<h1>♞ Xadrez Online</h1>
+<p>Joga com os teus amigos, cada um no seu computador.</p>
+<input id="name" maxlength="20" placeholder="O teu nome"><br>
+<button id="create">CRIAR SALA</button>
+<br>
+<input id="room" maxlength="6" placeholder="Código da sala">
+<button id="join">ENTRAR NA SALA</button>
+<p id="err" class="err"></p>
+</section>
+<section id="waiting" class="hide">
+<h2>Sala criada! 🎮</h2>
+<p>Envia este código ao teu amigo:</p>
+<div id="code" class="code"></div>
+<button id="copy">COPIAR CÓDIGO</button>
+<p id="wait">A aguardar o teu amigo...</p>
+</section>
+<section id="game" class="hide">
+<h1>♟ Xadrez Online</h1>
+<p id="roomText"></p>
+<p id="status"></p>
+<div id="board" class="board"></div>
+<p>Última jogada: <b id="last">—</b></p>
+<button id="newGame">NOVO JOGO</button>
+</section>
+</main>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module">
+import {Chess} from "https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm";
+const $=id=>document.getElementById(id);
+const pieces={w:{k:"♔",q:"♕",r:"♖",b:"♗",n:"♘",p:"♙"},b:{k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"}};
+let peer=null,conn=null,game=new Chess(),color=null,room="",name="",selected=null,isHost=false;
+function makeRoom(){return Math.random().toString(36).substring(2,8).toUpperCase()}
+function peerName(r){return "chess-room-"+r.toLowerCase()}
+function error(text){$("err").textContent=text}
+function showGame(){$("home").classList.add("hide");$("waiting").classList.add("hide");$("game").classList.remove("hide");$("roomText").textContent="Sala: "+room;draw();updateStatus()}
+function createRoom(){name=($("name").value.trim()||"Jogador").substring(0,20);room=makeRoom();color="w";isHost=true;peer=new Peer(peerName(room),{host:"0.peerjs.com",port:443,secure:true,path:"/",debug:1});peer.on("open",()=>{$("code").textContent=room;$("home").classList.add("hide");$("waiting").classList.remove("hide")});peer.on("connection",incoming=>{if(conn){incoming.close();return}conn=incoming;connectEvents()});peer.on("error",e=>{console.error(e);error("Erro ao criar a sala. Atualiza a página e tenta novamente.")})}
+function joinRoom(){name=($("name").value.trim()||"Jogador").substring(0,20);room=$("room").value.trim().toUpperCase();if(room.length!==6){error("O código tem de ter 6 caracteres.");return}color="b";isHost=false;peer=new Peer({host:"0.peerjs.com",port:443,secure:true,path:"/",debug:1});peer.on("open",()=>{conn=peer.connect(peerName(room),{reliable:true});connectEvents()});peer.on("error",e=>{console.error(e);error("Não foi possível ligar. Confirma o código e tenta novamente.")})}
+function connectEvents(){conn.on("open",()=>{conn.send({type:"hello",name:name});if(isHost){$("wait").textContent="Jogador ligado! A começar o jogo...";setTimeout(showGame,500)}else showGame()});conn.on("data",data=>{if(data.type==="hello"&&isHost){$("wait").textContent="Jogador ligado! A começar o jogo...";showGame();send({type:"state",fen:game.fen(),last:"—"})}if(data.type==="state"){game.load(data.fen);$("last").textContent=data.last||"—";draw();updateStatus()}if(data.type==="move"){try{const move=game.move({from:data.from,to:data.to,promotion:data.promotion||"q"});$("last").textContent=move.san;selected=null;draw();updateStatus()}catch(e){}}if(data.type==="new"){game=new Chess();selected=null;$("last").textContent="—";draw();updateStatus()}});conn.on("close",()=>{$("status").textContent="O teu amigo desligou."})}
+function send(data){if(conn&&conn.open)conn.send(data)}
+function updateStatus(){if(game.isCheckmate())$("status").textContent="♛ XEQUE-MATE!";else if(game.isDraw())$("status").textContent="🤝 EMPATE";else if(game.turn()===color)$("status").textContent="🟢 É a tua vez";else $("status").textContent="⏳ É a vez do teu amigo"}
+function draw(){const board=game.board();$("board").innerHTML="";for(let r=0;r<8;r++){for(let c=0;c<8;c++){const rr=color==="b"?7-r:r,cc=color==="b"?7-c:c,square=document.createElement("div"),nameSquare=String.fromCharCode(97+cc)+(8-rr);square.className="s "+((rr+cc)%2===0?"l":"d");if(selected===nameSquare)square.classList.add("sel");if(selected){const legal=game.moves({square:selected,verbose:true}).some(m=>m.to===nameSquare);if(legal)square.classList.add("legal")}const piece=board[rr][cc];if(piece)square.textContent=pieces[piece.color][piece.type];square.onclick=()=>clickSquare(nameSquare);$("board").appendChild(square)}}}
+function clickSquare(square){if(!conn||!conn.open||game.isGameOver()||game.turn()!==color)return;const piece=game.get(square);if(!selected){if(piece&&piece.color===color){selected=square;draw()}return}if(piece&&piece.color===color){selected=square;draw();return}const legal=game.moves({square:selected,verbose:true}).find(m=>m.to===square);if(!legal){selected=null;draw();return}const move=game.move({from:selected,to:square,promotion:"q"});selected=null;$("last").textContent=move.san;draw();updateStatus();send({type:"move",from:move.from,to:move.to,promotion:move.promotion||"q"})}
+$("create").onclick=createRoom;$("join").onclick=joinRoom;$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(room);$("copy").textContent="COPIADO ✓"}catch{alert("Código da sala: "+room)}};$("newGame").onclick=()=>{if(!isHost){alert("Só quem criou a sala pode iniciar um novo jogo.");return}game=new Chess();selected=null;$("last").textContent="—";draw();updateStatus();send({type:"new"})};$("room").addEventListener("input",()=>{$("room").value=$("room").value.toUpperCase().replace(/[^A-Z0-9]/g,"")});
+</script>
+</body>
+</html>
